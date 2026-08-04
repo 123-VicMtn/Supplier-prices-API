@@ -1,67 +1,67 @@
-# Configuration des fournisseurs.
-# Copier en suppliers.yaml. Les mots de passe n'apparaissent JAMAIS ici:
-# on ecrit ${NOM_DE_VARIABLE}, la valeur vient de l'environnement (voir .env).
+# Supplier configuration.
+# Copy to suppliers.yaml. Passwords NEVER appear here:
+# use ${VAR_NAME}; the value comes from the environment (see .env).
 
 database: var/prices.db
 
 defaults:
-  delay: 1.5 # secondes minimum entre deux requetes vers un meme hote
-  workers: 4 # requetes paralleles (adaptateur sitemap uniquement)
+  delay: 1.5 # minimum seconds between two requests to the same host
+  workers: 4 # parallel requests (sitemap adapter only)
   currency: CHF
   session_dir: var/sessions
 
 suppliers:
-  # --- Cas 1: catalogue JSON expose (le plus simple) -------------------------
-  # recon.py a repondu "JACKPOT". Aucun scraping, aucun selecteur a maintenir.
+  # --- Case 1: exposed JSON catalog (simplest) -------------------------------
+  # recon.py reported "JACKPOT". No scraping, no selectors to maintain.
   - key: fournisseur_shopify
-    name: Fournisseur A
+    name: Supplier A
     type: shopify
     base_url: https://shop-fournisseur-a.com
 
   - key: fournisseur_woo
-    name: Fournisseur B
+    name: Supplier B
     type: woocommerce
     base_url: https://www.fournisseur-b.ch
 
-  # --- Cas 2: sitemap + JSON-LD (le cas general) -----------------------------
+  # --- Case 2: sitemap + JSON-LD (the general case) --------------------------
   - key: fournisseur_public
-    name: Fournisseur C
+    name: Supplier C
     type: sitemap
     base_url: https://www.fournisseur-c.fr
-    # Restreint les sous-sitemaps a explorer (evite de parcourir le blog).
+    # Restrict sitemaps to crawl (avoids traversing the blog).
     sitemap_filter: "produit|product"
-    # Ne garde que les URLs qui ressemblent a une fiche article.
+    # Keep only URLs that look like product pages.
     product_url_pattern: "/produit/|/p/"
-    # Filet de securite si ni JSON-LD ni microdata ne portent le prix.
-    # "@attr" lit un attribut au lieu du texte.
+    # Fallback if neither JSON-LD nor microdata carries the price.
+    # "@attr" reads an attribute instead of text content.
     selectors:
       price: "meta[property='product:price:amount']@content"
       sku: "span.reference"
       name: "h1.product-title"
 
-  # --- Cas 3: prix negocies derriere un compte pro ---------------------------
+  # --- Case 3: negotiated prices behind a pro account ------------------------
   - key: fournisseur_pro
-    name: Fournisseur D (compte pro)
+    name: Supplier D (pro account)
     type: sitemap
     base_url: https://pro.fournisseur-d.com
-    delay: 1.5 # on est identifie: on se montre poli
+    delay: 1.5 # authenticated: stay polite
     workers: 2
     auth:
       url: https://pro.fournisseur-d.com/login
-      data: # noms des champs du formulaire reel
+      data: # field names from the actual login form
         email: ${FOURNISSEUR_D_USER}
         password: ${FOURNISSEUR_D_PASS}
-      check: "Se deconnecter" # texte present UNIQUEMENT une fois connecte
+      check: "Log out" # text present ONLY when logged in
       probe: https://pro.fournisseur-d.com/mon-compte
     product_url_pattern: "/article/"
 
-  # --- Cas 4: prix rendu en JavaScript (dernier recours) ---------------------
+  # --- Case 4: price rendered in JavaScript (last resort) --------------------
   - key: fournisseur_spa
-    name: Fournisseur E
+    name: Supplier E
     type: browser
-    enabled: false # a n'activer qu'apres avoir confirme le besoin
+    enabled: false # enable only after confirming the need
     base_url: https://www.fournisseur-e.com
     delay: 3.0
-    chromium: /usr/bin/chromium # Chromium systeme (apt), pas celui de Playwright
-    wait_for: "[data-testid='price']" # selecteur qui signale que le prix est arrive
+    chromium: /usr/bin/chromium # system Chromium (apt), not Playwright's
+    wait_for: "[data-testid='price']" # selector that signals the price has loaded
     product_url_pattern: "/produits/"
