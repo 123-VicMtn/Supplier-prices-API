@@ -1,0 +1,32 @@
+[Unit]
+Description=Pricewatch — collecte des prix fournisseurs
+After=network-online.target
+Wants=network-online.target
+# Si le passage echoue OU est juge suspect (code retour 1), on est prevenu.
+OnFailure=pricewatch-alert.service
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/pricewatch
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/pi/pricewatch/.env
+ExecStart=/home/pi/pricewatch/.venv/bin/python -m pricewatch.run --config suppliers.yaml
+
+# Garde-fous 2 Go: un scraper qui derape se fait tuer, le Pi survit,
+# et surtout on n'use pas la carte SD en swappant pendant des heures.
+MemoryMax=1200M
+MemorySwapMax=0
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=6h
+
+# Durcissement: le service n'ecrit que dans son propre dossier.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pi/pricewatch/var
+
+[Install]
+WantedBy=multi-user.target

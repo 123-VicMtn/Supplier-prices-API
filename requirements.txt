@@ -1,0 +1,12 @@
+# Coeur — suffit pour les fournisseurs sans JavaScript (la majorite).
+httpx[http2]>=0.27,<0.29
+selectolax>=0.3.21,<0.4       # parseur HTML C, ~10x plus rapide et leger que lxml
+PyYAML>=6.0,<7
+
+# UI web + API (la meme API alimentera Reonic en V2)
+fastapi>=0.115,<0.121
+uvicorn[standard]>=0.32,<0.40
+
+# Optionnel — uniquement si un fournisseur exige un rendu JavaScript.
+# Sur Pi: apt install chromium ; PAS "playwright install" (pas de build arm64 fiable).
+# playwright>=1.48,<2

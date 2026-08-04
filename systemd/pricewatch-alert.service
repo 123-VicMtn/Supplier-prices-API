@@ -1,0 +1,11 @@
+[Unit]
+Description=Alerte en cas de collecte en echec
+
+[Service]
+Type=oneshot
+User=pi
+EnvironmentFile=-/home/pi/pricewatch/.env
+# Remplacer par votre canal (webhook Slack/Teams, msmtp, ntfy.sh...).
+# journalctl fournit le detail: quel fournisseur, quelle erreur.
+ExecStart=/bin/sh -c 'journalctl -u pricewatch-scrape.service -n 40 --no-pager | \
+  curl -s -X POST -H "Content-Type: text/plain" --data-binary @- "$ALERT_WEBHOOK_URL"'

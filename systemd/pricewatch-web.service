@@ -1,0 +1,25 @@
+[Unit]
+Description=Pricewatch — UI web et API
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/pricewatch
+Environment=PRICEWATCH_DB=/home/pi/pricewatch/var/prices.db
+ExecStart=/home/pi/pricewatch/.venv/bin/uvicorn pricewatch.api:app --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+MemoryMax=256M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# ReadWrite et non ReadOnly: une base SQLite en mode WAL exige d'ecrire son
+# fichier -shm meme pour une simple lecture ("attempt to write a readonly
+# database" sinon). La protection reste au niveau applicatif: api.py ouvre
+# la connexion en mode=ro, l'API ne peut donc rien modifier.
+ReadWritePaths=/home/pi/pricewatch/var
+
+[Install]
+WantedBy=multi-user.target

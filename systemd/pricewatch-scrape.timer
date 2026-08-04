@@ -1,0 +1,12 @@
+[Unit]
+Description=Collecte nocturne des prix fournisseurs
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+# Evite de taper chez tous les fournisseurs a la seconde pile chaque nuit.
+RandomizedDelaySec=30m
+# Si le Pi etait eteint a l'heure prevue, rattrape au demarrage.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
