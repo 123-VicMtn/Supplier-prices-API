@@ -1,0 +1,6 @@
+.venv/
+var/
+suppliers.yaml
+.env
+__pycache__/
+*.pyc
