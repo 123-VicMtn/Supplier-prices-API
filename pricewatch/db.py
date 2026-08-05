@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS product (
     name        TEXT,
     url         TEXT,
     ean         TEXT,
+    category    TEXT,
     currency    TEXT,
     first_seen  TEXT NOT NULL,
     last_seen   TEXT NOT NULL,
@@ -41,6 +42,9 @@ CREATE TABLE IF NOT EXISTS product (
 CREATE INDEX IF NOT EXISTS idx_product_sku  ON product(sku);
 CREATE INDEX IF NOT EXISTS idx_product_ean  ON product(ean);
 CREATE INDEX IF NOT EXISTS idx_product_name ON product(name);
+-- L'index sur `category` est cree par _migrate(), pas ici: sur une base
+-- anterieure a cette colonne, SCHEMA s'execute avant l'ALTER TABLE et
+-- l'indexation d'une colonne inexistante ferait echouer toute l'ouverture.
 
 -- Une ligne uniquement quand le prix change. Le prix courant = MAX(observed_at).
 CREATE TABLE IF NOT EXISTS price (
@@ -78,12 +82,30 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Ajouts de colonnes sur une base existante.
+
+    `CREATE TABLE IF NOT EXISTS` ne touche pas une table deja creee: sans ces
+    ALTER, une base d'avant l'ajout d'une colonne resterait muette et les
+    ecritures echoueraient sur "no such column".
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(product)")}
+    for name, ddl in (("category", "ALTER TABLE product ADD COLUMN category TEXT"),):
+        if name not in cols:
+            conn.execute(ddl)
+            conn.commit()
+    # Index qui portent sur des colonnes ajoutees par migration: forcement ici,
+    # une fois les ALTER passes.
+    conn.executescript("CREATE INDEX IF NOT EXISTS idx_product_cat ON product(category);")
+
+
 def open_db(path: str | Path) -> sqlite3.Connection:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -112,10 +134,10 @@ def upsert_product(conn, supplier_id: int, sku: str, **fields) -> int:
         )
         return row["id"]
     cur = conn.execute(
-        "INSERT INTO product (supplier_id, sku, name, url, ean, currency, first_seen, last_seen) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO product (supplier_id, sku, name, url, ean, category, currency, "
+        "first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (supplier_id, sku, fields.get("name"), fields.get("url"), fields.get("ean"),
-         fields.get("currency"), ts, ts),
+         fields.get("category"), fields.get("currency"), ts, ts),
     )
     return cur.lastrowid
 

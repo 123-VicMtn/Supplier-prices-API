@@ -111,6 +111,7 @@ def from_datalayer(html: str, mapping: dict) -> dict | None:
             "name": obj.get(mapping.get("name", "")),
             "sku": obj.get(mapping.get("sku", "")),
             "ean": obj.get(mapping.get("ean", "")),
+            "category": obj.get(mapping.get("category", "")),
             "price": price,
             "currency": obj.get(mapping.get("currency", "")),
         }
@@ -132,10 +133,16 @@ def _walk_jsonld(node, out):
                 price = offers.get("lowPrice") or offers.get("price")
             else:
                 price = offers.get("price") if isinstance(offers, dict) else None
+            category = node.get("category")
+            if isinstance(category, dict):          # parfois un objet Thing
+                category = category.get("name")
+            elif isinstance(category, list):
+                category = " > ".join(str(c) for c in category if c)
             out.append({
                 "name": node.get("name"),
                 "sku": node.get("sku") or node.get("mpn") or node.get("productID"),
                 "ean": node.get("gtin13") or node.get("gtin") or node.get("gtin14"),
+                "category": category,
                 "price": parse_price(price),
                 "currency": offers.get("priceCurrency") if isinstance(offers, dict) else None,
             })
@@ -172,6 +179,7 @@ def from_microdata(tree: HTMLParser) -> dict | None:
         "name": prop("name"),
         "sku": prop("sku") or prop("mpn"),
         "ean": prop("gtin13"),
+        "category": prop("category"),
         "price": price,
         "currency": prop("priceCurrency"),
     }
@@ -199,6 +207,7 @@ def from_selectors(tree: HTMLParser, selectors: dict) -> dict | None:
         "name": pick(selectors.get("name")),
         "sku": pick(selectors.get("sku")),
         "ean": pick(selectors.get("ean")),
+        "category": pick(selectors.get("category")),
         "price": price,
         "currency": pick(selectors.get("currency")),
     }

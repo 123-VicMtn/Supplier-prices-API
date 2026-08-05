@@ -41,7 +41,7 @@ def q(sql: str, params=()) -> list[dict]:
 
 
 CURRENT = """
-SELECT p.id, p.sku, p.name, p.url, p.ean, p.currency, p.active, p.last_seen,
+SELECT p.id, p.sku, p.name, p.url, p.ean, p.category, p.currency, p.active, p.last_seen,
        s.key AS supplier, s.name AS supplier_name,
        (SELECT price FROM price WHERE product_id = p.id ORDER BY observed_at DESC LIMIT 1) AS price,
        (SELECT observed_at FROM price WHERE product_id = p.id ORDER BY observed_at DESC LIMIT 1) AS priced_at
@@ -63,10 +63,25 @@ def suppliers():
     """)
 
 
+@app.get("/api/v1/categories")
+def categories(supplier: str | None = None):
+    """Categories presentes, avec leur nombre d'articles actifs."""
+    clause, params = ("", ())
+    if supplier:
+        clause, params = " AND s.key = ?", (supplier,)
+    return q(f"""
+        SELECT p.category, COUNT(*) AS articles
+        FROM product p JOIN supplier s ON s.id = p.supplier_id
+        WHERE p.active = 1 AND p.category IS NOT NULL AND p.category != ''{clause}
+        GROUP BY p.category ORDER BY p.category
+    """, params)
+
+
 @app.get("/api/v1/products")
 def products(
-    q_: str | None = Query(None, alias="q", description="recherche sur reference, nom ou EAN"),
+    q_: str | None = Query(None, alias="q", description="recherche sur reference, nom, EAN ou categorie"),
     supplier: str | None = None,
+    category: str | None = None,
     active: bool = True,
     limit: int = Query(100, le=1000),
     offset: int = 0,
@@ -77,9 +92,12 @@ def products(
     if supplier:
         where.append("s.key = ?")
         params.append(supplier)
+    if category:
+        where.append("p.category = ?")
+        params.append(category)
     if q_:
-        where.append("(p.sku LIKE ? OR p.name LIKE ? OR p.ean LIKE ?)")
-        params += [f"%{q_}%"] * 3
+        where.append("(p.sku LIKE ? OR p.name LIKE ? OR p.ean LIKE ? OR p.category LIKE ?)")
+        params += [f"%{q_}%"] * 4
     clause = (" WHERE " + " AND ".join(where)) if where else ""
 
     total = q(f"SELECT COUNT(*) AS n FROM product p JOIN supplier s ON s.id = p.supplier_id{clause}",
@@ -140,8 +158,8 @@ def export_csv(supplier: str | None = None):
         clause, params = " WHERE s.key = ? AND p.active = 1", (supplier,)
     rows = q(f"{CURRENT}{clause or ' WHERE p.active = 1'} ORDER BY s.key, p.sku", params)
     buf = io.StringIO()
-    w = csv.DictWriter(buf, fieldnames=["supplier", "sku", "ean", "name", "price",
-                                        "currency", "priced_at", "url"],
+    w = csv.DictWriter(buf, fieldnames=["supplier", "sku", "ean", "name", "category",
+                                        "price", "currency", "priced_at", "url"],
                        extrasaction="ignore", delimiter=";")
     w.writeheader()
     w.writerows(rows)
@@ -199,6 +217,7 @@ INDEX_HTML = """
 <div class="bar" id="filters">
   <input type="search" id="q" placeholder="Reference, designation ou EAN...">
   <select id="supplier"><option value="">Tous les fournisseurs</option></select>
+  <select id="category"><option value="">Toutes les catégories</option></select>
   <button id="csv">Export CSV</button>
 </div>
 <table><thead id="head"></thead><tbody id="rows"></tbody></table>
@@ -217,23 +236,27 @@ async function load() {
   if (tab === 'products') {
     if ($('#q').value) params.set('q', $('#q').value);
     if ($('#supplier').value) params.set('supplier', $('#supplier').value);
+    if ($('#category').value) params.set('category', $('#category').value);
     params.set('limit', 200);
   }
   const path = { products:'products', changes:'changes?days=90', runs:'runs' }[tab];
   const data = await (await fetch('/api/v1/' + path + (path.includes('?') ? '&' : '?') + params)).json();
   const items = data.items || data;
 
+  // [libellé, aligné à droite] — décrire l'alignement colonne par colonne
+  // plutôt que par un seuil d'index, qui casse dès qu'on insère une colonne.
   const cols = {
-    products: ['Fournisseur','Reference','Designation','Prix'],
-    changes:  ['Fournisseur','Reference','Designation','Avant','Apres','Variation'],
-    runs:     ['Fournisseur','Debut','Statut','Articles','Prix modifies'],
+    products: [['Fournisseur',0],['Reference',0],['Designation',0],['Categorie',0],['Prix',1]],
+    changes:  [['Fournisseur',0],['Reference',0],['Designation',0],['Avant',1],['Apres',1],['Variation',1]],
+    runs:     [['Fournisseur',0],['Debut',0],['Statut',0],['Articles',1],['Prix modifies',1]],
   }[tab];
-  $('#head').innerHTML = '<tr>' + cols.map((c, i) =>
-    `<th${i >= 3 ? ' class="num"' : ''}>${c}</th>`).join('') + '</tr>';
+  $('#head').innerHTML = '<tr>' + cols.map(([c, num]) =>
+    `<th${num ? ' class="num"' : ''}>${c}</th>`).join('') + '</tr>';
 
   $('#rows').innerHTML = items.map(r => {
     if (tab === 'products') return `<tr data-id="${r.id}"><td>${esc(r.supplier)}</td>
       <td>${esc(r.sku)}</td><td>${esc(r.name)}</td>
+      <td>${esc(r.category) || '—'}</td>
       <td class="num">${fmt(r.price, r.currency)}</td></tr>`;
     if (tab === 'changes') return `<tr data-id="${r.id}"><td>${esc(r.supplier)}</td>
       <td>${esc(r.sku)}</td><td>${esc(r.name)}</td>
@@ -263,21 +286,32 @@ $('#rows').onclick = async e => {
   const h = p.history.map(x => `<tr><td>${x.observed_at.slice(0,10)}</td>
       <td class="num">${fmt(x.price, p.currency)}</td></tr>`).reverse().join('');
   $('#detail').innerHTML = `<h3>${esc(p.name || p.sku)}</h3>
-    <p class="meta">${esc(p.supplier_name)} — ref. ${esc(p.sku)}${p.ean ? ' — EAN ' + esc(p.ean) : ''}
+    <p class="meta">${esc(p.supplier_name)} — ref. ${esc(p.sku)}${p.category ? ' — ' + esc(p.category) : ''}${p.ean ? ' — EAN ' + esc(p.ean) : ''}
     ${p.url ? ` — <a href="${esc(p.url)}" target="_blank" rel="noopener">fiche</a>` : ''}</p>
     <table><thead><tr><th>Date</th><th class="num">Prix</th></tr></thead><tbody>${h}</tbody></table>
     <p><button autofocus onclick="document.getElementById('detail').close()">Fermer</button></p>`;
   $('#detail').showModal();
 };
 
+async function loadCategories() {
+  const sup = $('#supplier').value;
+  const cats = await (await fetch('/api/v1/categories' + (sup ? '?supplier=' + sup : ''))).json();
+  const keep = $('#category').value;
+  $('#category').innerHTML = '<option value="">Toutes les catégories</option>' + cats.map(c =>
+    `<option value="${esc(c.category)}">${esc(c.category)} (${c.articles})</option>`).join('');
+  $('#category').value = keep;   // conserve le filtre si la catégorie existe encore
+}
+
 let t; $('#q').oninput = () => { clearTimeout(t); t = setTimeout(load, 250); };
-$('#supplier').onchange = load;
+$('#supplier').onchange = () => { loadCategories(); load(); };
+$('#category').onchange = load;
 $('#csv').onclick = () => location = '/api/v1/export.csv'
   + ($('#supplier').value ? '?supplier=' + $('#supplier').value : '');
 
 fetch('/api/v1/suppliers').then(r => r.json()).then(s =>
   $('#supplier').innerHTML += s.map(x =>
     `<option value="${esc(x.key)}">${esc(x.name)} (${x.articles})</option>`).join(''));
+loadCategories();
 load();
 </script></body></html>
 """

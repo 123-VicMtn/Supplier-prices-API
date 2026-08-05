@@ -78,7 +78,8 @@ def run_supplier(conn, cfg: dict, *, limit: int | None = None, dry_run: bool = F
             pid = db.upsert_product(
                 conn, supplier_id, str(item["sku"]),
                 name=item.get("name"), url=item.get("url"),
-                ean=item.get("ean"), currency=item.get("currency"),
+                ean=item.get("ean"), category=item.get("category"),
+                currency=item.get("currency"),
             )
             seen_ids.add(pid)
             if db.record_price(conn, pid, item["price"]):

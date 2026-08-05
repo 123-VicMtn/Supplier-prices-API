@@ -91,6 +91,7 @@ class ShopifyAdapter(Adapter):
                         "name": title,
                         "url": f"{self.base}/products/{handle}",
                         "ean": v.get("barcode"),
+                        "category": p.get("product_type") or None,
                         "price": price,
                         "currency": self.cfg.get("currency"),
                     }
@@ -114,11 +115,13 @@ class WooCommerceAdapter(Adapter):
                 raw = prices.get("price")
                 if raw in (None, ""):
                     continue
+                cats = [c.get("name") for c in (it.get("categories") or []) if c.get("name")]
                 yield {
                     "sku": it.get("sku") or str(it.get("id")),
                     "name": it.get("name"),
                     "url": it.get("permalink"),
                     "ean": None,
+                    "category": " > ".join(cats) or None,
                     "price": int(raw) / (10 ** minor),
                     "currency": prices.get("currency_code") or self.cfg.get("currency"),
                 }
